@@ -27,6 +27,8 @@ render.experimental.xml
 *.jks
 *.keystore
 
+*.xlsx
+
 # Google Services (e.g. APIs or Firebase)
 google-services.json
 
