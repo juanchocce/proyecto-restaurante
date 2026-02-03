@@ -623,7 +623,7 @@ def main(page: ft.Page):
             if stats['total_sales'] > 500: trend_txt = "en crecimiento 🚀"
             elif stats['total_sales'] < 100: trend_txt = "baja 📉"
                 
-            ai_msg = f"Resumen: Tus ventas están {trend_txt}. El ticket promedio es {stat_ticket.value}. Se recomienda promocionar los platos menos vendidos."
+            ai_msg = f"Resumen: Tus ventas están {trend_txt}. El precio promedio de los platos es {stat_avg_price.value}. Se recomienda promocionar los platos menos vendidos."
             ai_insights_txt.value = ai_msg
 
             page.update()
@@ -699,9 +699,9 @@ def main(page: ft.Page):
 
             # Row 3: Detailed Lists
             ft.Row([
-                info_card("Top 3 Vendidos", top_dishes_col),
-                info_card("Menos Vendidos (Bottom 3)", bottom_dishes_col),
-                info_card("Top Clientes", top_clients_col),
+                info_card("Top Platos Más Vendidos", top_dishes_col),
+                info_card("Top Platos Menos Vendidos", bottom_dishes_col),
+                info_card("Top Mejores Clientes", top_clients_col),
             ], expand=True)
 
         ], expand=True, scroll=ft.ScrollMode.AUTO)
