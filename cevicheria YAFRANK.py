@@ -1,10 +1,9 @@
-
-import tkinter as tk
-from tkinter import ttk, messagebox, simpledialog
-from openpyxl import Workbook, load_workbook
-from datetime import datetime
-import os
+import flet as ft
 import json
+import os
+from datetime import datetime
+from openpyxl import Workbook, load_workbook
+import pandas as pd
 
 # ================= MODELO / LÓGICA =================
 
@@ -14,31 +13,24 @@ class OrderManager:
         self.menu_file = menu_file
         self.orders = []
         self.menu = {}
-        
+
         self.load_menu()
         self.load_orders()
 
     def load_menu(self):
-        # Cargar menú desde JSON o crear por defecto
         if os.path.exists(self.menu_file):
             try:
                 with open(self.menu_file, 'r', encoding='utf-8') as f:
                     self.menu = json.load(f)
             except Exception as e:
-                messagebox.showerror("Error", f"Error cargando menú: {e}")
+                print(f"Error cargando menú: {e}")
                 self.menu = {}
         else:
-            # Menú por defecto
             self.menu = {
                 "Duo Marino": 15.0,
                 "Causa de Pescado": 10.0,
-                "Causa de Langostinos": 15.0,
-                "Causa acevichada": 18.0,
                 "Ceviche": 12.0,
-                "Ceviche Mixto": 15.0,
                 "Trio Marino": 20.0,
-                "Chicharon de Pescado": 15.0,
-                "Sudado de Pescado": 18.0,
             }
             self.save_menu()
 
@@ -47,9 +39,10 @@ class OrderManager:
             with open(self.menu_file, 'w', encoding='utf-8') as f:
                 json.dump(self.menu, f, ensure_ascii=False, indent=4)
         except Exception as e:
-            messagebox.showerror("Error", f"Error guardando menú: {e}")
+            print(f"Error guardando menú: {e}")
 
     def add_dish(self, name, price):
+        # Update if exists, else add new
         self.menu[name] = float(price)
         self.save_menu()
 
@@ -70,17 +63,8 @@ class OrderManager:
         try:
             wb = load_workbook(self.filename)
             ws = wb.active
-            
-            # Estructura esperada (10 cols): 
-            # ID | Fecha | Cliente | Plato | Cant. | Precio | Total | Metodo | Entregado | Pagado
-            
             for row in ws.iter_rows(min_row=2, values_only=True):
-                # Validar que la fila tenga datos suficientes
                 if not row or row[0] is None: continue
-                
-                # Manejo de migración: si el Excel anterior tenía menos columnas, ajustar
-                # El formato anterior tenía 8 columnas.
-                # Si len(row) < 10, completamos con defaults
                 
                 row_data = list(row)
                 while len(row_data) < 10:
@@ -94,52 +78,39 @@ class OrderManager:
                         'plato': row_data[3],
                         'cantidad': int(row_data[4]),
                         'precio': float(row_data[5]),
-                        # Recalcular subtotal si no existe, o leer columna 6
                         'subtotal': float(row_data[6]) if row_data[6] is not None else (int(row_data[4]) * float(row_data[5])),
                         'metodo_pago': str(row_data[7]) if row_data[7] else "Efectivo",
                         'entregado': str(row_data[8]) == 'Si',
                         'pagado': str(row_data[9]) == 'Si'
                     }
                     self.orders.append(order)
-                except Exception as e:
-                    print(f"Fila ignorada/error: {row} -> {e}")
-                    
+                except Exception:
+                    pass
         except Exception as e:
-            messagebox.showerror("Error", f"No se pudo cargar el historial: {e}")
+            print(f"Error cargando historial: {e}")
 
     def save_orders(self):
         wb = Workbook()
         ws = wb.active
         ws.title = "Historial Pedidos"
-        
         headers = ["ID", "Fecha", "Cliente", "Plato", "Cant.", "Precio Unit.", "Total", "Método Pago", "Entregado", "Pagado"]
         ws.append(headers)
         
         for o in self.orders:
             ws.append([
-                o['id'],
-                o['fecha'],
-                o['cliente'],
-                o['plato'],
-                o['cantidad'],
-                o['precio'],
-                o['subtotal'],
-                o.get('metodo_pago', 'Efectivo'),
-                "Si" if o['entregado'] else "No",
-                "Si" if o['pagado'] else "No"
+                o['id'], o['fecha'], o['cliente'], o['plato'], o['cantidad'], o['precio'],
+                o['subtotal'], o.get('metodo_pago', 'Efectivo'),
+                "Si" if o['entregado'] else "No", "Si" if o['pagado'] else "No"
             ])
-            
         try:
             wb.save(self.filename)
-        except PermissionError:
-            messagebox.showerror("Error", "No se pudo guardar el pedido. Cierre el Excel si está abierto.")
+        except PermissionError as e:
+            return str(e)
+        return None
 
     def add_order(self, cliente, plato, cantidad, metodo_pago):
-        if plato not in self.menu:
-            raise ValueError("Plato no existente")
-        
+        if plato not in self.menu: return None
         precio = self.menu[plato]
-        
         order = {
             'id': self.get_next_id(),
             'fecha': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -153,326 +124,779 @@ class OrderManager:
             'pagado': False
         }
         self.orders.append(order)
-        self.save_orders()
-        return order
+        return self.save_orders()
 
     def delete_order(self, order_id):
         self.orders = [o for o in self.orders if o['id'] != order_id]
-        self.save_orders()
+        return self.save_orders()
 
     def toggle_status(self, order_id, field):
         for order in self.orders:
             if order['id'] == order_id:
-                if field in ['entregado', 'pagado']:
-                    order[field] = not order[field]
-                    self.save_orders()
-                    return order
+                order[field] = not order[field]
+                return self.save_orders()
         return None
 
-    def get_daily_total(self):
-        today = datetime.now().strftime("%Y-%m-%d")
-        total = 0.0
-        count = 0
-        for o in self.orders:
-            if str(o['fecha']).startswith(today):
-                total += o['subtotal']
-                count += 1
-        return count, total
-
-    def export_daily_report_excel(self, filename="reporte_ventas_diarias.xlsx"):
-        # Agrupar por fecha
-        daily_sales = {} # "YYYY-MM-DD": {'total': 0.0, 'count': 0}
-        
-        for o in self.orders:
-            # Extraer solo fecha YYYY-MM-DD
-            fecha_solo = str(o['fecha']).split(" ")[0]
-            if fecha_solo not in daily_sales:
-                daily_sales[fecha_solo] = {'total': 0.0, 'count': 0}
+    def get_filtered_stats(self, start_date=None, end_date=None):
+        if not self.orders:
+            return None
             
-            daily_sales[fecha_solo]['total'] += o['subtotal']
-            daily_sales[fecha_solo]['count'] += 1
-            
-        # Crear Excel
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Ventas Diarias"
-        ws.append(["Fecha", "Nro Pedidos", "Venta Total (S/)"])
+        df = pd.DataFrame(self.orders)
         
-        # Ordenar por fecha descendente
-        sorted_dates = sorted(daily_sales.keys(), reverse=True)
-        
-        for d in sorted_dates:
-            data = daily_sales[d]
-            ws.append([d, data['count'], data['total']])
-            
+        # Date Conversion
         try:
-            wb.save(filename)
-            return True, f"Reporte generado: {filename}"
-        except Exception as e:
-            return False, f"Error generando reporte: {e}"
+            df['fecha_dt'] = pd.to_datetime(df['fecha'])
+        except Exception:
+            return None
 
-# ================= VISTA / UI =================
+        # Filter by Date Range
+        if start_date and end_date:
+            mask = (df['fecha_dt'] >= pd.to_datetime(start_date)) & (df['fecha_dt'] <= pd.to_datetime(end_date) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1))
+            df_filtered = df.loc[mask]
+        else:
+             # Default to today if no range
+            today = datetime.now().strftime("%Y-%m-%d")
+            df_filtered = df[df['fecha'].str.startswith(today)]
 
-class MenuEditor(tk.Toplevel):
-    def __init__(self, parent, manager, callback_refresh):
-        super().__init__(parent)
-        self.manager = manager
-        self.callback_refresh = callback_refresh
-        self.title("Editor de Menú")
-        self.geometry("500x400")
-        
-        self.create_widgets()
-        self.refresh_list()
+        if df_filtered.empty:
+            return {
+                "total_sales": 0,
+                "ticket_average": 0,
+                "top_3_dishes": [],
+                "bottom_3_dishes": [],
+                "top_3_clients": [],
+                "avg_price_per_dish": 0,
+                "payment_methods": {},
+                "daily_sales_trend": {}
+            }
 
-    def create_widgets(self):
-        # Frame Entradas
-        form_frame = tk.Frame(self, pady=10)
-        form_frame.pack(fill="x")
+        # KPIs
+        total_sales = df_filtered['subtotal'].sum()
+        ticket_average = df_filtered['subtotal'].mean()
         
-        tk.Label(form_frame, text="Nombre del Plato:").grid(row=0, column=0, padx=5)
-        self.entry_name = tk.Entry(form_frame, width=20)
-        self.entry_name.grid(row=0, column=1, padx=5)
+        # Top/Bottom Dishes
+        dish_counts = df_filtered['plato'].value_counts()
+        total_items = dish_counts.sum()
         
-        tk.Label(form_frame, text="Precio (S/):").grid(row=0, column=2, padx=5)
-        self.entry_price = tk.Entry(form_frame, width=8)
-        self.entry_price.grid(row=0, column=3, padx=5)
-        
-        btn_save = tk.Button(form_frame, text="Guardar / Actualizar", bg="#4CAF50", fg="white",
-                             command=self.save_dish)
-        btn_save.grid(row=0, column=4, padx=10)
-        
-        # Lista
-        self.tree = ttk.Treeview(self, columns=("Plato", "Precio"), show="headings")
-        self.tree.heading("Plato", text="Nombre del Plato")
-        self.tree.heading("Precio", text="Precio")
-        self.tree.pack(fill="both", expand=True, padx=10, pady=10)
-        
-        # Botón Eliminar
-        btn_del = tk.Button(self, text="Eliminar Plato Seleccionado", bg="#E57373", fg="white",
-                            command=self.delete_dish)
-        btn_del.pack(pady=10)
+        top_3_dishes = [{"name": name, "pct": (count/total_items)*100} for name, count in dish_counts.head(3).items()]
+        bottom_3_dishes = [{"name": name, "pct": (count/total_items)*100} for name, count in dish_counts.tail(3).items()]
 
-    def refresh_list(self):
-        for i in self.tree.get_children():
-            self.tree.delete(i)
-        for plato, precio in self.manager.menu.items():
-            self.tree.insert("", "end", values=(plato, f"{precio:.2f}"))
+        # Top Clients
+        client_counts = df_filtered['cliente'].value_counts()
+        total_clients = client_counts.sum()
+        top_3_clients = [{"name": name, "pct": (count/total_clients)*100} for name, count in client_counts.head(3).items()]
 
-    def save_dish(self):
-        name = self.entry_name.get().strip()
-        price_str = self.entry_price.get().strip()
+        # Avg Price per Dish (Total Sales / Total Qty)
+        total_qty = df_filtered['cantidad'].sum()
+        avg_price_per_dish = total_sales / total_qty if total_qty > 0 else 0
+
+        # Payment Methods
+        payment_methods = df_filtered['metodo_pago'].value_counts().to_dict()
+
+        # Daily Sales Trend (for LineChart)
+        # Group by Date (YYYY-MM-DD) and sum subtotal at that day
+        daily_sales = df_filtered.groupby(df_filtered['fecha_dt'].dt.date)['subtotal'].sum().to_dict()
         
-        if not name or not price_str:
-            messagebox.showwarning("Error", "Ingrese nombre y precio")
-            return
+        # Sort by date
+        daily_sales = dict(sorted(daily_sales.items()))
+
+        return {
+            "total_sales": total_sales,
+            "ticket_average": ticket_average,
+            "top_3_dishes": top_3_dishes,
+            "bottom_3_dishes": bottom_3_dishes,
+            "top_3_clients": top_3_clients,
+            "avg_price_per_dish": avg_price_per_dish,
+            "payment_methods": payment_methods,
+            "daily_sales_trend": daily_sales
+        }
+
+# ================= VISTA / UI (FLET) =================
+
+def main(page: ft.Page):
+    page.title = "Cevichería YAFRANK"
+    page.theme_mode = ft.ThemeMode.LIGHT
+    page.padding = 0
+    page.window.min_width = 1000
+    page.window.min_height = 700
+
+    manager = OrderManager()
+    
+    # 1. SALES VIEW COMPONENT
+    def create_sales_view():
         
-        try:
-            price = float(price_str)
-        except ValueError:
-            messagebox.showwarning("Error", "El precio debe ser un número")
-            return
+        menu_items_container = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True, spacing=10)
+        
+        qty_input = ft.TextField(value="1", label="Cantidad", width=80, text_align="center", keyboard_type="number")
+        
+        payment_group = ft.RadioGroup(content=ft.Row([
+            ft.Radio(value="Efectivo", label="Efectivo"),
+            ft.Radio(value="Yape", label="Yape"),
+            ft.Radio(value="Plin", label="Plin"),
+        ]))
+        payment_group.value = "Efectivo"
+        
+        search_input = ft.TextField(
+            label="Buscar Cliente/Plato", 
+            prefix_icon=ft.Icons.SEARCH,
+            on_change=lambda e: filter_orders(e.control.value),
+            expand=True
+        )
+        
+        client_input = ft.TextField(label="Nombre Cliente", expand=True)
+
+        client_input = ft.TextField(label="Nombre Cliente", expand=True)
+
+        # --- TABLA DE VENTAS CON HEADER FIJO (Sticky Header) ---
+        col_widths = [50, 120, 150, 150, 60, 80, 80, 100, 120]
+        headers_txt = ["ID", "Fecha", "Cliente", "Plato", "Cant.", "Total", "Pago", "Estado", "Acciones"]
+        
+        header_row = ft.Row(
+            controls=[
+                ft.Container(content=ft.Text(h, weight="bold"), width=w) 
+                for h, w in zip(headers_txt, col_widths)
+            ],
+            spacing=10
+        )
+        
+        orders_header = ft.Container(
+            content=header_row,
+            bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+            padding=10,
+            border_radius=ft.border_radius.only(top_left=10, top_right=10),
+        )
+
+        orders_list = ft.ListView(expand=True, spacing=0)
+
+
+        def refresh_orders_table_logic(orders_to_show=None):
+            # PURE LOGIC
+            orders_list.controls.clear()
             
-        self.manager.add_dish(name, price)
-        self.entry_name.delete(0, tk.END)
-        self.entry_price.delete(0, tk.END)
-        self.refresh_list()
-        self.callback_refresh() # Actualizar ventana principal
-
-    def delete_dish(self):
-        sel = self.tree.selection()
-        if not sel: return
-        
-        plato = self.tree.item(sel[0], "values")[0]
-        if messagebox.askyesno("Confirmar", f"¿Eliminar '{plato}' del menú?"):
-            self.manager.delete_dish(plato)
-            self.refresh_list()
-            self.callback_refresh()
-
-class CevicheriaApp(tk.Tk):
-    def __init__(self):
-        super().__init__()
-        self.manager = OrderManager()
-        
-        self.title("Sistema de Pedidos - Cevichería YAFRANK")
-        self.geometry("1150x700")
-        self.minsize(1000, 600)
-        
-        self.columnconfigure(0, weight=3) # Menú
-        self.columnconfigure(1, weight=7) # Tabla
-        self.rowconfigure(0, weight=1)
-
-        self.create_widgets()
-        self.refresh_all()
-
-    def create_widgets(self):
-        self.create_left_panel()
-        self.create_right_panel()
-
-    def create_left_panel(self):
-        left_frame = tk.Frame(self, bg="#f0f0f0", padx=10, pady=10)
-        left_frame.grid(row=0, column=0, sticky="nsew")
-        
-        # Header Menú
-        header_menu = tk.Frame(left_frame, bg="#f0f0f0")
-        header_menu.pack(fill="x", pady=(0, 10))
-        
-        lbl_title = tk.Label(header_menu, text="CARTA", font=("Arial", 14, "bold"), bg="#f0f0f0")
-        lbl_title.pack(side="left")
-        
-        btn_edit_menu = tk.Button(header_menu, text="⚙ Editar", command=self.open_menu_editor, font=("Arial", 9))
-        btn_edit_menu.pack(side="right")
-
-        # Lista de Platos
-        self.dish_listbox = tk.Listbox(left_frame, font=("Arial", 11), selectmode=tk.SINGLE, height=15)
-        self.dish_listbox.pack(fill="both", expand=True, pady=5)
-        
-        # Controles Agregar
-        control_frame = tk.Frame(left_frame, bg="#f0f0f0")
-        control_frame.pack(fill="x", pady=10)
-        
-        # Cantidad
-        tk.Label(control_frame, text="Cant:", font=("Arial", 10), bg="#f0f0f0").grid(row=0, column=0, sticky="w")
-        self.var_qty = tk.IntVar(value=1)
-        tk.Spinbox(control_frame, from_=1, to=100, textvariable=self.var_qty, width=4, font=("Arial", 11))\
-            .grid(row=0, column=1, padx=5)
+            data_source = orders_to_show if orders_to_show is not None else manager.orders
+            sorted_orders = sorted(data_source, key=lambda x: x['id'], reverse=True)
             
-        # Método de Pago
-        tk.Label(control_frame, text="Pago:", font=("Arial", 10), bg="#f0f0f0").grid(row=0, column=2, sticky="w")
-        self.combo_payment = ttk.Combobox(control_frame, values=["Efectivo", "Yape", "Plin"], width=8, state="readonly")
-        self.combo_payment.current(0)
-        self.combo_payment.grid(row=0, column=3, padx=5)
-        
-        # Botón Agregar
-        btn_add = tk.Button(left_frame, text="AGREGAR AL PEDIDO", bg="#4CAF50", fg="white", font=("Arial", 10, "bold"),
-                           command=self.add_order_ui)
-        btn_add.pack(fill="x", pady=5)
+            for o in sorted_orders[:50]: 
+                status_paid = "Pagado" if o['pagado'] else "Pendiente"
+                status_del = "Entregado" if o['entregado'] else "Pendiente"
+                
+                color_paid = ft.Colors.GREEN if o['pagado'] else ft.Colors.RED
+                color_del = ft.Colors.GREEN if o['entregado'] else ft.Colors.ORANGE
 
-        # Reportes
-        report_frame = tk.LabelFrame(left_frame, text="Reportes", bg="#f0f0f0", padx=5, pady=5)
-        report_frame.pack(fill="x", pady=20)
-        
-        tk.Button(report_frame, text="Resumen del Día (Total)", command=self.show_daily_report_popup).pack(fill="x", pady=2)
-        tk.Button(report_frame, text="Generar Excel Ventas Diarias", command=self.generate_daily_excel, bg="#2196F3", fg="white").pack(fill="x", pady=2)
+                row_controls = [
+                    ft.Text(str(o['id'])),
+                    ft.Text(str(o['fecha'])[:16]),
+                    ft.Text(o['cliente']),
+                    ft.Text(o['plato']),
+                    ft.Text(str(o['cantidad'])),
+                    ft.Text(f"S/{o['subtotal']:.2f}"),
+                    ft.Text(o['metodo_pago']),
+                    ft.Row([
+                        ft.Container(content=ft.Text("P", size=10, color=ft.Colors.WHITE), bgcolor=color_paid, padding=5, border_radius=5, tooltip=f"Pago: {status_paid}"),
+                        ft.Container(content=ft.Text("E", size=10, color=ft.Colors.WHITE), bgcolor=color_del, padding=5, border_radius=5, tooltip=f"Entrega: {status_del}"),
+                    ], spacing=2),
+                     ft.Row([
+                        ft.IconButton("attach_money", icon_color=ft.Colors.GREEN, icon_size=20, tooltip="Marcar Pagado", on_click=lambda e, id=o['id']: toggle_paid_click(e, id)), 
+                        ft.IconButton("delivery_dining", icon_color=ft.Colors.BLUE, icon_size=20, tooltip="Marcar Entregado", on_click=lambda e, id=o['id']: toggle_delivered_click(e, id)), 
+                        ft.IconButton("delete", icon_color=ft.Colors.RED, icon_size=20, tooltip="Eliminar", on_click=lambda e, id=o['id']: delete_order_click(e, id)),
+                    ], spacing=0)
+                ]
 
-    def create_right_panel(self):
-        right_frame = tk.Frame(self, bg="#ffffff", padx=10, pady=10)
-        right_frame.grid(row=0, column=1, sticky="nsew")
-        
-        header_frame = tk.Frame(right_frame, bg="white")
-        header_frame.pack(fill="x", pady=(0, 10))
-        
-        tk.Label(header_frame, text="Cliente:", font=("Arial", 11, "bold"), bg="white").pack(side="left")
-        self.entry_client = tk.Entry(header_frame, font=("Arial", 11))
-        self.entry_client.pack(side="left", padx=5, fill="x", expand=True)
-        
-        # Tabla
-        columns = ("ID", "Fecha", "Cliente", "Plato", "Cant.", "Pago", "Total", "Entregado", "Pagado")
-        self.tree = ttk.Treeview(right_frame, columns=columns, show="headings")
-        
-        self.tree.heading("ID", text="ID"); self.tree.column("ID", width=30, stretch=False)
-        self.tree.heading("Fecha", text="Fecha"); self.tree.column("Fecha", width=120, stretch=False)
-        self.tree.heading("Cliente", text="Cliente"); self.tree.column("Cliente", width=100)
-        self.tree.heading("Plato", text="Plato"); self.tree.column("Plato", width=150)
-        self.tree.heading("Cant.", text="Cnt"); self.tree.column("Cant.", width=40, anchor="center")
-        self.tree.heading("Pago", text="Pago"); self.tree.column("Pago", width=60, anchor="center")
-        self.tree.heading("Total", text="Total"); self.tree.column("Total", width=70, anchor="e")
-        self.tree.heading("Entregado", text="Entreg."); self.tree.column("Entregado", width=60, anchor="center")
-        self.tree.heading("Pagado", text="Pagado"); self.tree.column("Pagado", width=60, anchor="center")
-        
-        self.tree.pack(fill="both", expand=True)
-        
-        scrollbar = ttk.Scrollbar(right_frame, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscroll=scrollbar.set)
-        
-        # Botones Acción
-        action_frame = tk.Frame(right_frame, bg="white")
-        action_frame.pack(fill="x", pady=10)
-        
-        tk.Button(action_frame, text="ELIMINAR SELECCIÓN", bg="#E57373", fg="white", command=self.delete_item).pack(side="left", padx=2)
-        tk.Button(action_frame, text="LIMPIAR FORMULARIO", bg="#FF9800", fg="white", command=self.clean_form).pack(side="left", padx=2)
-        
-        tk.Button(action_frame, text="MARCAR PAGADO", bg="#2196F3", fg="white", command=lambda: self.toggle_selection("pagado")).pack(side="right", padx=2)
-        tk.Button(action_frame, text="MARCAR ENTREGADO", bg="#8BC34A", fg="white", command=lambda: self.toggle_selection("entregado")).pack(side="right", padx=2)
+                cells = [ft.Container(content=c, width=w) for c, w in zip(row_controls, col_widths)]
+                
+                orders_list.controls.append(
+                    ft.Container(
+                        content=ft.Row(cells, spacing=10),
+                        padding=ft.padding.symmetric(vertical=5, horizontal=10),
+                        border=ft.border.only(bottom=ft.border.BorderSide(1, ft.Colors.GREY_200))
+                    )
+                )
 
-    # ================= LOGICA UI =================
+        def refresh_menu_logic():
+             # PURE LOGIC: Modifies the Control's state but DOES NOT call .update()
+            menu_items_container.controls.clear()
+            for dish, price in manager.menu.items():
+                card = ft.Container(
+                    content=ft.Row([
+                        ft.Column([
+                            ft.Text(dish, weight="bold", size=16),
+                            ft.Text(f"S/ {price:.2f}", color=ft.Colors.GREEN)
+                        ], expand=True),
+                        ft.IconButton(
+                            icon="add_circle", 
+                            icon_color=ft.Colors.BLUE, 
+                            icon_size=30,
+                            tooltip="Agregar Pedido",
+                            on_click=lambda e, d=dish: add_order_click(e, d)
+                        )
+                    ], alignment="spaceBetween"),
+                    padding=10,
+                    bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+                    border_radius=10,
+                )
+                menu_items_container.controls.append(card)
 
-    def refresh_all(self):
-        # Refresh Menu List
-        self.dish_listbox.delete(0, tk.END)
-        for plato, precio in self.manager.menu.items():
-            self.dish_listbox.insert(tk.END, f"{plato} - S/ {precio:.2f}")
+        # Interaction Handlers
+        def add_order_click(e, plato_name):
+            if not client_input.value:
+                # Assuming page.snack_bar is handled by page.update()
+                page.snack_bar = ft.SnackBar(ft.Text("Ingrese Nombre del Cliente"), bgcolor=ft.Colors.RED)
+                page.snack_bar.open = True
+                page.update()
+                return
+
+            try:
+                qty = int(qty_input.value)
+            except ValueError:
+                qty = 1
+                
+            err = manager.add_order(client_input.value, plato_name, qty, payment_group.value)
+            if err:
+                page.snack_bar = ft.SnackBar(ft.Text(f"Error guardando: {err}"), bgcolor=ft.Colors.RED)
+            else:
+                page.snack_bar = ft.SnackBar(ft.Text(f"Pedido Agregado: {plato_name}"), bgcolor=ft.Colors.GREEN)
+                
+                # Logic update
+                refresh_orders_table_logic()
+                if hasattr(create_dashboard_view, 'update_logic'):
+                    create_dashboard_view.update_logic()
             
-        # Refresh Orders Tree
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-            
-        sorted_orders = sorted(self.manager.orders, key=lambda x: x['id'], reverse=True)
-        for order in sorted_orders:
-            self.tree.insert("", "end", values=(
-                order['id'],
-                order['fecha'],
-                order['cliente'],
-                order['plato'],
-                order['cantidad'],
-                order.get('metodo_pago', 'Efectivo'),
-                f"S/ {order['subtotal']:.2f}",
-                "✔" if order['entregado'] else "No",
-                "✔" if order['pagado'] else "No"
-            ))
+            page.snack_bar.open = True
+            page.update() # Explicitly update the page after logic
 
-    def add_order_ui(self):
-        cliente = self.entry_client.get().strip()
-        if not cliente:
-            messagebox.showwarning("Aviso", "Ingrese nombre del cliente")
-            return
+        def delete_order_click(e, oid):
+            manager.delete_order(oid)
+            refresh_orders_table_logic()
+            page.update() # Update page
 
-        selection = self.dish_listbox.curselection()
-        if not selection:
-            messagebox.showwarning("Aviso", "Seleccione un plato")
-            return
-            
-        item_text = self.dish_listbox.get(selection[0])
-        plato_nombre = item_text.split(" - S/")[0]
-        cantidad = self.var_qty.get()
-        metodo = self.combo_payment.get()
+        def toggle_paid_click(e, oid):
+            manager.toggle_status(oid, 'pagado')
+            refresh_orders_table_logic()
+            page.update() # Update page
 
-        self.manager.add_order(cliente, plato_nombre, cantidad, metodo)
-        self.refresh_all()
-        self.var_qty.set(1)
-
-    def delete_item(self):
-        selected = self.tree.selection()
-        if not selected: return
-        if not messagebox.askyesno("Confirmar", "Eliminar pedido del historial?"): return
+        def toggle_delivered_click(e, oid):
+            manager.toggle_status(oid, 'entregado')
+            refresh_orders_table_logic()
+            page.update() # Update page
         
-        for item in selected:
-            order_id = self.tree.item(item, "values")[0]
-            self.manager.delete_order(int(order_id))
-        self.refresh_all()
+        # Search Logic
+        def filter_orders(query):
+            if not query:
+                refresh_orders_table_logic()
+            else:
+                q = query.lower()
+                filtered = [o for o in manager.orders if q in o['cliente'].lower() or q in o['plato'].lower()]
+                refresh_orders_table_logic(filtered)
+            page.update()
 
-    def toggle_selection(self, field):
-        for item in self.tree.selection():
-            order_id = self.tree.item(item, "values")[0]
-            self.manager.toggle_status(int(order_id), field)
-        self.refresh_all()
+        # --- INITIAL DATA POPULATION ---
+        refresh_menu_logic() 
+        refresh_orders_table_logic()
+        
+        # Expose methods for external access
+        create_sales_view.refresh_table = refresh_orders_table_logic
+        create_sales_view.refresh_menu = refresh_menu_logic
 
-    def clean_form(self):
-        self.entry_client.delete(0, tk.END)
+        view = ft.Row([
+            # Left Column (Menu)
+            ft.Container(
+                content=ft.Column([
+                    ft.Text("Carta", size=20, weight="bold"),
+                    ft.Divider(),
+                    ft.Row([client_input]),
+                    ft.Row([
+                        qty_input,
+                        payment_group
+                    ], alignment="spaceBetween", vertical_alignment="center"),
+                    ft.Divider(),
+                    menu_items_container
+                ]),
+                width=350,
+                padding=10,
+                bgcolor=ft.Colors.SURFACE,
+                border_radius=12,
+            ),
+            # Right Column (Orders)
+            ft.Container(
+                content=ft.Column([
+                   ft.Row([
+                       ft.Text("Pedidos Recientes", size=20, weight="bold"),
+                       ft.IconButton("refresh", on_click=lambda e: (filter_orders(search_input.value), page.update()))
+                   ], alignment="spaceBetween"),
+                   ft.Row([search_input]), # Add Search Bar Row
+                   ft.Row(
+                       [
+                           ft.Column([
+                                orders_header,
+                                orders_list
+                           ], 
+                           expand=True, 
+                           spacing=0,
+                           width=sum(col_widths) + 120 # Width sum + padding
+                           )
+                       ], 
+                       scroll=ft.ScrollMode.AUTO, 
+                       expand=True
+                   ) 
+                ]),
+                expand=True,
+                padding=10,
+                border_radius=12,
+                bgcolor=ft.Colors.SURFACE,
+            )
+        ], expand=True, spacing=10)
+        
+        return view
 
-    def open_menu_editor(self):
-        MenuEditor(self, self.manager, self.refresh_all)
+    # 2. DASHBOARD VIEW
+    def create_dashboard_view():
+        # Date Pickers
+        start_date_picker = ft.DatePicker(
+            on_change=lambda e: update_dashboard_logic(),
+            first_date=datetime(2023, 1, 1),
+            last_date=datetime(2030, 12, 31)
+        )
+        end_date_picker = ft.DatePicker(
+             on_change=lambda e: update_dashboard_logic(),
+            first_date=datetime(2023, 1, 1),
+            last_date=datetime(2030, 12, 31)
+        )
+        page.overlay.append(start_date_picker)
+        page.overlay.append(end_date_picker)
 
-    def show_daily_report_popup(self):
-        count, total = self.manager.get_daily_total()
-        date_str = datetime.now().strftime("%d/%m/%Y")
-        msg = f"RESUMEN {date_str}\n\nPedidos: {count}\nVenta Total: S/ {total:.2f}"
-        messagebox.showinfo("Reporte Diario", msg)
+        btn_start_date = ft.ElevatedButton(
+            "Desde", 
+            icon=ft.Icons.CALENDAR_MONTH, 
+            on_click=lambda _: start_date_picker.pick_date()
+        )
+        btn_end_date = ft.ElevatedButton(
+            "Hasta", 
+            icon=ft.Icons.CALENDAR_MONTH, 
+            on_click=lambda _: end_date_picker.pick_date()
+        )
+        
+        def clear_filters():
+             start_date_picker.value = None
+             end_date_picker.value = None
+             update_dashboard_logic() 
 
-    def generate_daily_excel(self):
-        ok, msg = self.manager.export_daily_report_excel()
-        if ok: messagebox.showinfo("Éxito", msg)
-        else: messagebox.showerror("Error", msg)
+        date_range_row = ft.Row([
+            ft.Text("Filtrar por Fecha:", weight="bold"),
+            btn_start_date,
+            btn_end_date,
+            ft.IconButton(icon=ft.Icons.FILTER_LIST_OFF, tooltip="Limpiar Filtros", on_click=lambda e: clear_filters())
+        ], alignment="center", spacing=20)
+        
+        chart_payment = ft.PieChart(
+            sections=[],
+            sections_space=0,
+            center_space_radius=40,
+            expand=True
+        )
+        
+        # Historical Chart (Line)
+        chart_history = ft.LineChart(
+            data_series=[],
+            border=ft.border.all(3, ft.Colors.GREY),
+            horizontal_grid_lines=ft.ChartGridLines(interval=100, color=ft.Colors.GREY, width=1),
+            vertical_grid_lines=ft.ChartGridLines(interval=1, color=ft.Colors.GREY, width=1),
+            left_axis=ft.ChartAxis(labels_size=40),
+            bottom_axis=ft.ChartAxis(labels_interval=1),
+            expand=True,
+            tooltip_bgcolor=ft.Colors.with_opacity(0.8, ft.Colors.BLACK),
+        )
+
+        stat_total = ft.Text("S/ 0.00", size=30, weight="bold")
+        stat_ticket = ft.Text("S/ 0.00", size=30, weight="bold")
+        stat_avg_price = ft.Text("S/ 0.00", size=30, weight="bold")
+        
+        # Analysis containers
+        top_dishes_col = ft.Column()
+        bottom_dishes_col = ft.Column()
+        top_clients_col = ft.Column()
+        ai_insights_txt = ft.Text("", italic=True, size=14, color=ft.Colors.GREY_700)
+        
+        def update_dashboard_logic():
+            # 1. Get Dates
+            s_date = start_date_picker.value
+            e_date = end_date_picker.value
+            
+            # Format UI buttons to show selected date
+            btn_start_date.text = s_date.strftime("%Y-%m-%d") if s_date else "Desde"
+            btn_end_date.text = e_date.strftime("%Y-%m-%d") if e_date else "Hasta"
+
+            # 2. Prepare Data
+            stats = manager.get_filtered_stats(s_date, e_date)
+            
+            if not stats: 
+                # Zero state
+                stat_total.value = "S/ 0.00"
+                stat_ticket.value = "S/ 0.00"
+                stat_avg_price.value = "S/ 0.00"
+                chart_payment.sections = []
+                chart_history.data_series = []
+                top_dishes_col.controls = []
+                bottom_dishes_col.controls = []
+                top_clients_col.controls = []
+                ai_insights_txt.value = "No hay datos para el rango de fechas seleccionado."
+                page.update()
+                return
+
+            # 3. Update UI
+            # KPIs
+            stat_total.value = f"S/ {stats['total_sales']:.2f}"
+            stat_ticket.value = f"S/ {stats['ticket_average']:.2f}"
+            stat_avg_price.value = f"S/ {stats['avg_price_per_dish']:.2f}"
+            
+            # Pie Chart
+            payment_sections = []
+            colors = [ft.Colors.BLUE, ft.Colors.ORANGE, ft.Colors.GREEN, ft.Colors.PURPLE]
+            total_orders_count = sum(stats['payment_methods'].values())
+            
+            for i, (method, count) in enumerate(stats['payment_methods'].items()):
+                pct = (count / total_orders_count) * 100 if total_orders_count > 0 else 0
+                payment_sections.append(
+                    ft.PieChartSection(
+                        value=count,
+                        title=f"{pct:.0f}%",
+                        color=colors[i % len(colors)],
+                        radius=50,
+                        title_style=ft.TextStyle(size=12, color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD),
+                    )
+                )
+            chart_payment.sections = payment_sections
+            
+            # Historical Chart
+            trend_points = []
+            if stats['daily_sales_trend']:
+                # We need numeric X for LineChart. We can use index 0,1,2... or timestamp.
+                # Simplified: Use index and show date on tooltip or just index.
+                # For better UX in Flet LineChart without complex date axis custom renderer,
+                # we just plot values.
+                dates = list(stats['daily_sales_trend'].keys())
+                amounts = list(stats['daily_sales_trend'].values())
+                
+                for i, amt in enumerate(amounts):
+                    trend_points.append(
+                        ft.LineChartDataPoint(i, amt, tooltip=f"{dates[i]}: S/{amt:.2f}")
+                    )
+                
+                chart_history.data_series = [
+                    ft.LineChartData(
+                        data_points=trend_points,
+                        stroke_width=3,
+                        color=ft.Colors.CYAN,
+                        curved=True,
+                        stroke_cap_round=True,
+                        below_line_bgcolor=ft.Colors.with_opacity(0.2, ft.Colors.CYAN),
+                    )
+                ]
+                chart_history.min_y = 0
+                chart_history.max_y = max(amounts) * 1.1 if amounts else 100
+                chart_history.min_x = 0
+                chart_history.max_x = len(amounts) - 1 if amounts else 0
+            else:
+                 chart_history.data_series = []
+
+            # Lists (Top/Bottom)
+            def build_mini_list(data, color):
+                items = []
+                for item in data:
+                    items.append(
+                        ft.Container(
+                            content=ft.Row([
+                                ft.Text(item['name'], size=12, expand=True),
+                                ft.Text(f"{item['pct']:.1f}%", size=12, weight="bold", color=color)
+                            ]),
+                            padding=5,
+                            border=ft.border.only(bottom=ft.border.BorderSide(0.5, ft.Colors.GREY_300))
+                        )
+                    )
+                return items
+
+            top_dishes_col.controls = build_mini_list(stats['top_3_dishes'], ft.Colors.GREEN)
+            bottom_dishes_col.controls = build_mini_list(stats['bottom_3_dishes'], ft.Colors.RED)
+            top_clients_col.controls = build_mini_list(stats['top_3_clients'], ft.Colors.BLUE)
+
+            # AI Insights Simulations
+            trend_txt = "estable"
+            if stats['total_sales'] > 500: trend_txt = "en crecimiento 🚀"
+            elif stats['total_sales'] < 100: trend_txt = "baja 📉"
+                
+            ai_msg = f"Resumen: Tus ventas están {trend_txt}. El ticket promedio es {stat_ticket.value}. Se recomienda promocionar los platos menos vendidos."
+            ai_insights_txt.value = ai_msg
+
+            page.update()
+
+        def stat_card(title, value_control, icon, color):
+            return ft.Container(
+                content=ft.Column([
+                    ft.Row([ft.Icon(icon, color=color), ft.Text(title, color=ft.Colors.GREY, size=12)]),
+                    value_control
+                ]),
+                padding=15,
+                bgcolor=ft.Colors.SURFACE, 
+                border_radius=12,
+                expand=True,
+            )
+
+        def info_card(title, content_col):
+             return ft.Container(
+                content=ft.Column([
+                    ft.Text(title, weight="bold", size=14),
+                    ft.Divider(height=10, thickness=1),
+                    content_col
+                ]),
+                padding=15,
+                bgcolor=ft.Colors.SURFACE, 
+                border_radius=12,
+                expand=True,
+            )
+
+        # Assemble View
+        view = ft.Column([
+            ft.Text("Dashboard de Negocio", size=24, weight="bold"),
+            date_range_row,
+            ft.Container(content=ai_insights_txt, bgcolor=ft.Colors.BLUE_50, padding=10, border_radius=8),
+            
+            # Row 1: KPIs
+            ft.Row([
+                stat_card("Venta Total", stat_total, ft.Icons.ATTACH_MONEY, ft.Colors.GREEN),
+                stat_card("Ticket Promedio", stat_ticket, ft.Icons.RECEIPT, ft.Colors.BLUE),  
+                stat_card("Precio Prom./Plato", stat_avg_price, ft.Icons.RESTAURANT_MENU, ft.Colors.ORANGE),  
+            ]),
+            
+            # Row 2: Charts
+            ft.Row([
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("Métodos de Pago", weight="bold"),
+                        chart_payment,
+                        ft.Row([
+                            ft.Row([ft.Container(width=10, height=10, bgcolor=ft.Colors.BLUE), ft.Text("Eft")]),
+                            ft.Row([ft.Container(width=10, height=10, bgcolor=ft.Colors.ORANGE), ft.Text("Yape")]),
+                            ft.Row([ft.Container(width=10, height=10, bgcolor=ft.Colors.GREEN), ft.Text("Plin")]),
+                        ], alignment="center")
+                    ], horizontal_alignment="center"),
+                    expand=1,
+                    bgcolor=ft.Colors.SURFACE,
+                    padding=20,
+                    border_radius=12,
+                    height=300
+                ),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("Evolución de Ventas (Diaria)", weight="bold"),
+                        chart_history
+                    ], horizontal_alignment="center"),
+                    expand=2,
+                    bgcolor=ft.Colors.SURFACE,
+                    padding=20,
+                    border_radius=12,
+                    height=300
+                )
+            ], expand=True),
+
+            # Row 3: Detailed Lists
+            ft.Row([
+                info_card("Top 3 Vendidos", top_dishes_col),
+                info_card("Menos Vendidos (Bottom 3)", bottom_dishes_col),
+                info_card("Top Clientes", top_clients_col),
+            ], expand=True)
+
+        ], expand=True, scroll=ft.ScrollMode.AUTO)
+        
+        # Expose update method
+        create_dashboard_view.update_logic = update_dashboard_logic
+        
+        # Populate initial state
+        # Delay initial load slightly to ensure UI is ready or just call it:
+        # update_dashboard_logic() -> Logic might fail if page overlay not ready? 
+        # Safe to call but DatePickers start None.
+        
+        return view
+
+    # 3. MANAGEMENT VIEW
+    def create_management_view():
+        name_input = ft.TextField(label="Nombre del Plato", expand=True)
+        price_input = ft.TextField(label="Precio", width=100, keyboard_type="number")
+        
+        menu_table = ft.DataTable(
+            columns=[
+                ft.DataColumn(ft.Text("Plato")),
+                ft.DataColumn(ft.Text("Precio")),
+                ft.DataColumn(ft.Text("Acciones")),
+            ],
+            expand=True
+        )
+
+        def edit_dish_click(e, dish):
+            price = manager.menu.get(dish, 0.0)
+            name_input.value = dish
+            price_input.value = str(price)
+            # Focus on name
+            name_input.focus()
+            page.update()
+
+        def refresh_mgmt_logic():
+            # PURE LOGIC
+            menu_table.rows.clear()
+            for dish, price in manager.menu.items():
+                menu_table.rows.append(
+                    ft.DataRow(
+                        cells=[
+                            ft.DataCell(ft.Text(dish)),
+                            ft.DataCell(ft.Text(f"S/ {price:.2f}")),
+                            ft.DataCell(
+                                ft.Row([
+                                    ft.IconButton(
+                                        icon=ft.Icons.EDIT,
+                                        icon_color=ft.Colors.AMBER,
+                                        on_click=lambda e, d=dish: edit_dish_click(e, d),
+                                        tooltip="Editar"
+                                    ),
+                                    ft.IconButton(
+                                        icon=ft.Icons.DELETE, 
+                                        icon_color=ft.Colors.RED, 
+                                        on_click=lambda e, d=dish: delete_dish_click(e, d),
+                                        tooltip="Eliminar"
+                                    )
+                                ])
+                            )
+                        ]
+                    )
+                )
+
+        def save_dish_click(e):
+            if not name_input.value or not price_input.value:
+                return
+            try:
+                p = float(price_input.value)
+                manager.add_dish(name_input.value, p)
+                name_input.value = ""
+                price_input.value = ""
+                
+                # Logic
+                refresh_mgmt_logic()
+                if hasattr(create_sales_view, 'refresh_menu'):
+                    create_sales_view.refresh_menu()
+                
+                page.update() # Update page
+            except ValueError:
+                page.snack_bar = ft.SnackBar(ft.Text("Precio inválido"), bgcolor=ft.Colors.RED)
+                page.snack_bar.open = True
+                page.update()
+
+        def delete_dish_click(e, dish):
+            manager.delete_dish(dish)
+            refresh_mgmt_logic()
+            if hasattr(create_sales_view, 'refresh_menu'):
+                create_sales_view.refresh_menu()
+            page.update()
+
+        # Initial populate
+        refresh_mgmt_logic()
+
+        # Expose refresh method
+        create_management_view.refresh_logic = refresh_mgmt_logic
+
+        return ft.Container(
+            content=ft.Column([
+                ft.Text("Gestión de Carta", size=24, weight="bold"),
+                ft.Container(
+                    content=ft.Row([
+                        name_input,
+                        price_input,
+                        ft.ElevatedButton("Guardar", on_click=save_dish_click, bgcolor=ft.Colors.GREEN, color=ft.Colors.WHITE)
+                    ]),
+                    padding=20,
+                    bgcolor=ft.Colors.SURFACE,
+                    border_radius=12
+                ),
+                ft.Container(
+                    content=menu_table,
+                    padding=10,
+                    bgcolor=ft.Colors.SURFACE,
+                    border_radius=12,
+                    expand=True
+                )
+            ]),
+            padding=20,
+            expand=True
+        )
+
+    # --- MAIN LAYOUT ASSEMBLY ---
+    
+    # Initialize views exactly ONCE
+    sales_view = create_sales_view()
+    dashboard_view = create_dashboard_view()
+    management_view = create_management_view()
+    
+    content_area = ft.Container(content=sales_view, expand=True, padding=10)
+
+    def nav_change(e):
+        selected_index = e.control.selected_index
+        
+        # 1. Assign Content
+        if selected_index == 0:
+            content_area.content = sales_view
+            create_sales_view.refresh_table() # Call logic
+        elif selected_index == 1:
+            content_area.content = dashboard_view
+            create_dashboard_view.update_logic() # Call logic
+        elif selected_index == 2:
+            content_area.content = management_view
+            create_management_view.refresh_logic() # Call logic
+            
+        # 2. Render Page (Single Update)
+        page.update()
+
+    rail = ft.NavigationRail(
+        selected_index=0,
+        label_type=ft.NavigationRailLabelType.ALL,
+        min_width=100,
+        min_extended_width=400,
+        group_alignment=-0.9,
+        destinations=[
+            ft.NavigationRailDestination(
+                icon="point_of_sale", 
+                selected_icon="point_of_sale_outlined",
+                label="Ventas"
+            ),
+            ft.NavigationRailDestination(
+                icon="dashboard",
+                selected_icon="dashboard_customize", 
+                label="Dashboard"
+            ),
+            ft.NavigationRailDestination(
+                icon="settings", 
+                selected_icon_content=ft.Icon("settings"), 
+                label="Gestión"
+            ),
+        ],
+        on_change=nav_change,
+        expand=True,
+    )
+
+    def theme_toggle(e):
+        page.theme_mode = ft.ThemeMode.DARK if page.theme_mode == ft.ThemeMode.LIGHT else ft.ThemeMode.LIGHT
+        theme_icon.icon = "dark_mode" if page.theme_mode == ft.ThemeMode.LIGHT else "light_mode"
+        page.update()
+
+    theme_icon = ft.IconButton("dark_mode", on_click=theme_toggle)
+
+    page.add(
+        ft.Row(
+            [
+                ft.Column([
+                    rail,
+                    ft.Container(content=theme_icon, padding=10, alignment=ft.alignment.center)
+                ], width=100),
+                content_area,
+            ],
+            expand=True,
+        )
+    )
 
 if __name__ == "__main__":
-    app = CevicheriaApp()
-    app.mainloop()
+    ft.app(target=main)
