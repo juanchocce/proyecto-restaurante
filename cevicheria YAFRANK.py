@@ -416,6 +416,11 @@ def main(page: ft.Page):
     # 1. SALES VIEW COMPONENT
     def create_sales_view():
         
+        def hover_effect(e):
+            e.control.scale = 1.02 if e.data == "true" else 1.0
+            e.control.bgcolor = ft.Colors.SURFACE_CONTAINER_HIGHEST if e.data == "true" else ft.Colors.SURFACE
+            e.control.update()
+
         menu_items_container = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True, spacing=10)
         
         qty_input = ft.TextField(value="1", label="Cantidad", width=80, text_align="center", keyboard_type="number")
@@ -550,7 +555,11 @@ def main(page: ft.Page):
                     ft.Container(
                         content=ft.Row(cells, spacing=10),
                         padding=ft.padding.symmetric(vertical=5, horizontal=10),
-                        border=ft.border.only(bottom=ft.border.BorderSide(1, ft.Colors.GREY_200))
+                        border=ft.border.only(bottom=ft.border.BorderSide(1, ft.Colors.GREY_200)),
+                        bgcolor=ft.Colors.SURFACE,
+                        scale=1.0,
+                        animate_scale=ft.animation.Animation(300, ft.AnimationCurve.EASE_OUT),
+                        on_hover=hover_effect
                     )
                 )
 
@@ -560,21 +569,26 @@ def main(page: ft.Page):
             for dish, price in manager.menu.items():
                 card = ft.Container(
                     content=ft.Row([
-                        ft.Column([
-                            ft.Text(dish, weight="bold", size=16),
-                            ft.Text(f"S/ {price:.2f}", color=ft.Colors.GREEN)
-                        ], expand=True),
+                        # Re-design: Price inline with SpaceBetween
+                        ft.Row([
+                             ft.Text(dish, weight="bold", size=16, color=ft.Colors.ON_SURFACE, expand=True),
+                             ft.Text(f"S/ {price:.2f}", color=ft.Colors.PRIMARY, size=16, weight="bold")
+                        ], expand=True, alignment=ft.MainAxisAlignment.SPACE_BETWEEN, vertical_alignment="center"),
+                        
                         ft.IconButton(
                             icon="add_circle", 
-                            icon_color=ft.Colors.BLUE, 
+                            icon_color=ft.Colors.PRIMARY, 
                             icon_size=30,
                             tooltip="Agregar Pedido",
                             on_click=lambda e, d=dish: add_order_click(e, d)
                         )
                     ], alignment="spaceBetween"),
                     padding=10,
-                    bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+                    bgcolor=ft.Colors.SURFACE,
                     border_radius=10,
+                    scale=1.0,
+                    animate_scale=ft.animation.Animation(300, ft.AnimationCurve.EASE_OUT),
+                    on_hover=hover_effect
                 )
                 menu_items_container.controls.append(card)
 
@@ -1083,19 +1097,44 @@ def main(page: ft.Page):
 
     # 3. MANAGEMENT VIEW
     def create_management_view():
+        
+        def hover_effect(e):
+             # For DataRow, we might not have scale property directly on the control passed in event if it mimics specialized row.
+             # However, assuming standard behavior:
+             e.control.scale = 1.02 if e.data == "true" else 1.0
+             e.control.color = ft.Colors.SURFACE_CONTAINER_HIGHEST if e.data == "true" else ft.Colors.SURFACE
+             e.control.update() 
+             # Note: DataRow usually doesn't emit on_hover. 
+             # Standard Flet DataTable rows don't support simple on_hover.
+             # If this fails, we resort to standard logic or just skip DataRow animation
+             # User asked for "Tables of History and Management". History is ListView (done).
+             # Management IS DataTable. We will try to rely on native `on_select_changed` or `data_row_color` but
+             # "hover_effect ... scale 1.02" is very specific.
+             # Use a ListView for Management items instead of DataTable to fully comply with visual request?
+             # OR wrap DataRow? No.
+             # I will skip applying this specifically to DataTable rows because it breaks standard DataTable behavior
+             # and Flet doesn't support generic Control props on DataRow.
+             # However, I will apply it to the `cost_table` if it is a list, but it is defined as DataTable.
+             # Retaining DataTable structure as it is robust for CRUD. 
+             # I will comment this limitation or try to apply it to the simplified `ListView` if I refactor it.
+             # Refactoring Management DataTable to ListView for visual consistency:
+             pass
+
+        # We will REFACTOR Management DataTable to ListView to enable the requested "Premium Animations"
+        # because Flet DataRows do not support `scale` and `animate_scale`.
+        
         # --- TAB 1: CARTA DE PLATOS (Existing CRUD) ---
         menu_name = ft.TextField(label="Nombre Plato", expand=True)
         menu_price = ft.TextField(label="Precio (S/)", width=100, keyboard_type="number")
         
-        # Table of Menu
-        menu_table = ft.DataTable(
-            columns=[
-                ft.DataColumn(ft.Text("Plato")),
-                ft.DataColumn(ft.Text("Precio")),
-                ft.DataColumn(ft.Text("Acciones")),
-            ],
-            expand=True
-        )
+        # Refactor: Use ListView instead of DataTable for Premium Animation support
+        menu_list_view = ft.ListView(expand=True, spacing=5)
+
+        # Helper hover (re-defined here to access scope, or could use global)
+        def hover_effect_mgmt(e):
+            e.control.scale = 1.02 if e.data == "true" else 1.0
+            e.control.bgcolor = ft.Colors.SURFACE_CONTAINER_HIGHEST if e.data == "true" else ft.Colors.SURFACE
+            e.control.update()
 
         def save_dish_click(e):
             if not menu_name.value or not menu_price.value: return
@@ -1127,28 +1166,35 @@ def main(page: ft.Page):
             page.update()
 
         def refresh_mgmt_logic():
-            menu_table.rows.clear()
+            menu_list_view.controls.clear()
             for dish, price in manager.menu.items():
-                menu_table.rows.append(
-                    ft.DataRow(
-                        cells=[
-                            ft.DataCell(ft.Text(dish)),
-                            ft.DataCell(ft.Text(f"S/ {price:.2f}")),
-                            ft.DataCell(
-                                ft.Row([
-                                    ft.IconButton(
-                                        icon=ft.Icons.EDIT,
-                                        icon_color=ft.Colors.AMBER,
-                                        on_click=lambda e, d=dish: edit_dish_click(e, d)
-                                    ),
-                                    ft.IconButton(
-                                        icon=ft.Icons.DELETE, 
-                                        icon_color=ft.Colors.RED, 
-                                        on_click=lambda e, d=dish: delete_dish_click(e, d)
-                                    )
-                                ])
-                            )
-                        ]
+                menu_list_view.controls.append(
+                    ft.Container(
+                        content=ft.Row([
+                           ft.Row([
+                                ft.Text(dish, weight="bold", color=ft.Colors.ON_SURFACE, expand=True),
+                                ft.Text(f"S/ {price:.2f}", size=16, color=ft.Colors.PRIMARY, weight="bold")
+                           ], expand=True, alignment=ft.MainAxisAlignment.SPACE_BETWEEN, vertical_alignment="center"),
+                           
+                           ft.Row([
+                                ft.IconButton(
+                                    icon=ft.Icons.EDIT,
+                                    icon_color=ft.Colors.AMBER,
+                                    on_click=lambda e, d=dish: edit_dish_click(e, d)
+                                ),
+                                ft.IconButton(
+                                    icon=ft.Icons.DELETE, 
+                                    icon_color=ft.Colors.RED, 
+                                    on_click=lambda e, d=dish: delete_dish_click(e, d)
+                                )
+                           ])
+                        ], alignment="spaceBetween"),
+                        padding=10,
+                        border=ft.border.only(bottom=ft.border.BorderSide(1, ft.Colors.GREY_200)),
+                        bgcolor=ft.Colors.SURFACE,
+                        scale=1.0,
+                        animate_scale=ft.animation.Animation(300, ft.AnimationCurve.EASE_OUT),
+                        on_hover=hover_effect_mgmt
                     )
                 )
 
@@ -1158,7 +1204,7 @@ def main(page: ft.Page):
             content=ft.Column([
                 ft.Row([menu_name, menu_price, ft.ElevatedButton("Guardar", on_click=save_dish_click)]),
                 ft.Divider(),
-                ft.Column([menu_table], scroll=ft.ScrollMode.AUTO, expand=True)
+                ft.Column([menu_list_view], expand=True) # Scroll handled by ListView
             ], expand=True),
             padding=10
         )
@@ -1166,7 +1212,9 @@ def main(page: ft.Page):
         # --- TAB 2: INSUMOS / SERVICIOS (Cost Dictionary) ---
         cost_name = ft.TextField(label="Insumo/Servicio", expand=True)
         cost_val = ft.TextField(label="Costo Ref. (S/)", width=100, keyboard_type="number")
-        cost_table = ft.DataTable(columns=[ft.DataColumn(ft.Text("Item")), ft.DataColumn(ft.Text("Costo")), ft.DataColumn(ft.Text("Acciones"))])
+        
+        # Refactor: ListView for Premium Animation
+        cost_list_view = ft.ListView(expand=True, spacing=5)
 
         def save_cost_item_click(e):
             if not cost_name.value or not cost_val.value: return
@@ -1197,19 +1245,28 @@ def main(page: ft.Page):
             page.update()
 
         def refresh_costs_logic():
-            cost_table.rows.clear()
+            cost_list_view.controls.clear()
             for item, cost in cost_manager.cost_dict.items():
-                cost_table.rows.append(
-                    ft.DataRow(cells=[
-                        ft.DataCell(ft.Text(item)),
-                        ft.DataCell(ft.Text(f"S/ {cost:.2f}")),
-                        ft.DataCell(
+                cost_list_view.controls.append(
+                    ft.Container(
+                        content=ft.Row([
+                            ft.Row([
+                                ft.Text(item, weight="bold", color=ft.Colors.ON_SURFACE, expand=True),
+                                ft.Text(f"S/ {cost:.2f}", size=16, color=ft.Colors.PRIMARY, weight="bold")
+                            ], expand=True, alignment=ft.MainAxisAlignment.SPACE_BETWEEN, vertical_alignment="center"),
+                            
                             ft.Row([
                                 ft.IconButton(ft.Icons.EDIT, icon_color=ft.Colors.AMBER, on_click=lambda e, i=item: edit_cost_item_click(e, i)),
                                 ft.IconButton(ft.Icons.DELETE, icon_color=ft.Colors.RED, on_click=lambda e, i=item: delete_cost_item_click(e, i))
                             ])
-                        )
-                    ])
+                        ], alignment="spaceBetween"),
+                         padding=10,
+                        border=ft.border.only(bottom=ft.border.BorderSide(1, ft.Colors.GREY_200)),
+                        bgcolor=ft.Colors.SURFACE,
+                        scale=1.0,
+                        animate_scale=ft.animation.Animation(300, ft.AnimationCurve.EASE_OUT),
+                        on_hover=hover_effect_mgmt
+                    )
                 )
         
         refresh_costs_logic()
@@ -1218,7 +1275,7 @@ def main(page: ft.Page):
             content=ft.Column([
                 ft.Row([cost_name, cost_val, ft.ElevatedButton("Guardar", on_click=save_cost_item_click)]),
                 ft.Divider(),
-                ft.Column([cost_table], scroll=ft.ScrollMode.AUTO, expand=True)
+                ft.Column([cost_list_view], expand=True)
             ], expand=True),
             padding=10
         )
@@ -1241,6 +1298,12 @@ def main(page: ft.Page):
 
     # 4. COSTS VIEW (Operativa)
     def create_costs_view():
+        
+        def hover_effect(e):
+            e.control.scale = 1.02 if e.data == "true" else 1.0
+            e.control.bgcolor = ft.Colors.SURFACE_CONTAINER_HIGHEST if e.data == "true" else ft.Colors.SURFACE
+            e.control.update()
+
         # LEFT: Dict items
         qty_input = ft.TextField(label="Cant.", width=80, value="1", keyboard_type="number")
         
@@ -1278,15 +1341,20 @@ def main(page: ft.Page):
                 dict_list.controls.append(
                     ft.Container(
                         content=ft.Row([
-                            ft.Column([
-                                ft.Text(item, weight="bold"),
-                                ft.Text(f"S/ {cost:.2f}", size=12, color=ft.Colors.GREY)
-                            ], expand=True, spacing=2),
-                            ft.IconButton(ft.Icons.ADD_CIRCLE, icon_color=ft.Colors.BLUE, 
+                            ft.Row([
+                                ft.Text(item, weight="bold", color=ft.Colors.ON_SURFACE, expand=True),
+                                ft.Text(f"S/ {cost:.2f}", size=16, color=ft.Colors.PRIMARY, weight="bold")
+                            ], expand=True, alignment=ft.MainAxisAlignment.SPACE_BETWEEN, vertical_alignment="center"),
+                            
+                            ft.IconButton(ft.Icons.ADD_CIRCLE, icon_color=ft.Colors.PRIMARY, 
                                 on_click=lambda e, i=item: add_expense_click(e, i))
                         ], alignment="spaceBetween"),
                         padding=10,
-                        border=ft.border.only(bottom=ft.border.BorderSide(1, ft.Colors.GREY_200))
+                        border=ft.border.only(bottom=ft.border.BorderSide(1, ft.Colors.GREY_200)),
+                        scale=1.0,
+                        animate_scale=ft.animation.Animation(300, ft.AnimationCurve.EASE_OUT),
+                        on_hover=hover_effect,
+                        bgcolor=ft.Colors.SURFACE
                     )
                 )
         
@@ -1347,7 +1415,17 @@ def main(page: ft.Page):
                         on_click=lambda e, eid=ep['id']: (cost_manager.delete_expense(eid), refresh_history_logic(), page.update()))
                 ]
                 cells = [ft.Container(c, width=w) for c, w in zip(row_c, col_widths)]
-                history_list.controls.append(ft.Container(ft.Row(cells, spacing=10), padding=5, border=ft.border.only(bottom=ft.border.BorderSide(1, ft.Colors.GREY_200))))
+                history_list.controls.append(
+                    ft.Container(
+                        ft.Row(cells, spacing=10), 
+                        padding=5, 
+                        border=ft.border.only(bottom=ft.border.BorderSide(1, ft.Colors.GREY_200)),
+                        scale=1.0,
+                        animate_scale=ft.animation.Animation(300, ft.AnimationCurve.EASE_OUT),
+                        on_hover=hover_effect,
+                        bgcolor=ft.Colors.SURFACE
+                    )
+                )
             page.update()
 
         refresh_dict_list_logic()
