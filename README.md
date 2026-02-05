@@ -56,7 +56,7 @@ Es un sistema integral de gestión de escritorio (ERP) diseñado para optimizar 
 1. **Requisitos**: Tener instalado Python 3.9 o superior.
 2. **Clonar el repositorio**:
 ```bash
-git clone https://github.com/juanchocce/proyecto-restaurante.git
+git clone https://github.com/juanchocce/Sistema-ERP-Restaurante.git
 
 ```
 
