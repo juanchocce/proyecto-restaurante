@@ -1,12 +1,11 @@
-# proyecto-restaurante
-
-# 🍣 Sistema ERP Cevichería YAFRANK
+# 🍣 Sistema ERP Restaurante
 
 ## 📝 Descripción
 
-**Cevichería YAFRANK** es un sistema integral de gestión de escritorio (ERP) diseñado para optimizar las operaciones comerciales de un restaurante en Puente Piedra, Lima. El software combina una interfaz moderna y fluida con potentes herramientas de **Business Intelligence (BI)** para el control de ingresos, egresos y análisis de rentabilidad en tiempo real.
+Es un sistema integral de gestión de escritorio (ERP) diseñado para optimizar las operaciones comerciales de un restaurante. El software combina una interfaz moderna y fluida con potentes herramientas de **Business Intelligence (BI)** para el control de ingresos, egresos y análisis de rentabilidad en tiempo real.
 
 ---
+<img width="1366" height="768" alt="1" src="https://github.com/juanchocce/proyecto-restaurante/blob/main/restaurante%203.png" />
 
 ## 🚀 Características Principales
 
@@ -81,7 +80,7 @@ python "cevicheria YAFRANK.py"
 
 ## 👤 Autor
 
-**Juan Miguel Chocce Puma**
+**Juan Chocce**
 
 * Ingeniero de Sistemas y Analista de BI.
 * 📍 Lima, Perú.
@@ -90,6 +89,6 @@ python "cevicheria YAFRANK.py"
 
 ## ⚖️ Licencia
 
-Este proyecto es de uso privado para la gestión interna de la Cevichería YAFRANK.
+Este proyecto es de uso privado para la gestión interna del restaurante.
 
 ---
