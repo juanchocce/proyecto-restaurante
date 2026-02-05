@@ -56,7 +56,7 @@ Es un sistema integral de gestión de escritorio (ERP) diseñado para optimizar 
 1. **Requisitos**: Tener instalado Python 3.9 o superior.
 2. **Clonar el repositorio**:
 ```bash
-git clone https://github.com/tu-usuario/cevicheria-yafrank.git
+git clone https://github.com/juanchocce/proyecto-restaurante.git
 
 ```
 
@@ -84,6 +84,9 @@ python "cevicheria YAFRANK.py"
 
 * Ingeniero de Sistemas y Analista de BI.
 * 📍 Lima, Perú.
+* GitHub: [@juanchocce](https://github.com/juanchocce)
+* Linkedin: [Juan Chocce](https://www.linkedin.com/in/juanchocce/)
+
 
 ---
 
